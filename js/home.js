@@ -26,8 +26,24 @@ window.Settings = {
   async save(d) { return DB.put('settings', { ...(await this.get()), ...d, id: 'prefs' }); },
 };
 
+/* 週間計画：平日は朝30分、週末は2時間。Ⅱ（Ⅱ-1・Ⅱ-2）を構造的なボトルネックとみて、平日にⅡ-1を回し、週末にⅡ-2・Ⅲを書く */
+window.WeekPlan = [
+  { day: 0, title: '日曜（2時間）：書き直し＋カード作り', items: [['土曜に書いた答案を、AI添削の指摘を反映して60分で書き直す', '#/practice'], ['キーワードカードの復習（15分）', '#/study'], ['Ⅱ-1「4段構成」カードを自分の言葉で3枚追加する（30分）', '#/cards']] },
+  { day: 1, title: '月曜（朝30分）：Ⅱ-1を1枚', items: [['Ⅱ-1を25分で1枚書く（骨子5分→本文20分）', '#/practice'], ['自動チェックを見て、要改善の項目を反省メモに1行', '#/practice']] },
+  { day: 2, title: '火曜（朝30分）：AI添削と復習', items: [['昨日のⅡ-1の「AI添削の依頼文をコピー」→ 指摘を反省メモに記録', '#/practice'], ['キーワードカードの復習（10分）', '#/study']] },
+  { day: 3, title: '水曜（朝30分）：Ⅱ-1を1枚', items: [['Ⅱ-1を25分で1枚書く（前回と別の分野：送電・配電・発電）', '#/practice'], ['4段構成カードを1枚読み、数値・規格を声に出す', '#/cards']] },
+  { day: 4, title: '木曜（朝30分）：AI添削と復習', items: [['水曜のⅡ-1をAI添削 → 反省メモに記録', '#/practice'], ['キーワードカードの復習（10分）', '#/study']] },
+  { day: 5, title: '金曜（朝30分）：Ⅱ-1の書き直し', items: [['今週の指摘を反映して、月曜か水曜のⅡ-1を25分で書き直す', '#/practice'], ['土曜に書くⅡ-2またはⅢの問題を決め、土俵ストーリーを1本読む', '#/cards']] },
+  { day: 6, title: '土曜（2時間）：Ⅱ-2 または Ⅲ を1本', items: [['Ⅱ-2（70分）とⅢ（105分）を隔週で書く。月1回（第1土曜）は通し模試3時間30分を手書きで', '#/practice'], ['自動チェック → AI添削 → 反省メモまで当日中に', '#/practice'], ['通し模試の週はⅢから着手する順も試す', '#/mock']] },
+];
+
 Pages.home = async (view) => {
   const [s, cards, answers, logs] = await Promise.all([Settings.get(), DB.all('cards'), DB.all('answers'), DB.all('logs')]);
+  const dow = new Date().getDay();
+  const plan = WeekPlan.find((p) => p.day === dow);
+  const weekStart = U.addDays(U.ymd(), -dow);
+  const weekDone = answers.filter((a) => a.done && (a.updatedAt || '') >= weekStart);
+  const weekKinds = (k) => weekDone.filter((a) => a.kind === k).length;
   const due = cards.filter(Cards.isDue).length;
   const days = s.examDate ? U.daysFromToday(s.examDate) : null;
   const done = answers.filter((a) => a.done);
@@ -53,13 +69,12 @@ Pages.home = async (view) => {
 
     <div class="grid grid-2" style="align-items:start">
       <div class="card">
-        <h2>今日やること</h2>
+        <div class="card-head"><h2>今日やること</h2><span class="small muted">${due ? `カード復習 ${due}枚` : 'カード復習は完了'}</span></div>
+        <p class="small" style="margin:0 0 8px"><b>${U.esc(plan.title)}</b></p>
         <ul class="list-plain">
-          <li><span>キーワードカードの復習</span>${due ? `<a class="btn btn-sm btn-primary" href="#/study">${due}枚</a>` : '<span class="badge badge-green">完了</span>'}</li>
-          <li><span>論文を1本（Ⅱ-1なら35分）書く</span><a class="btn btn-sm" href="#/practice">練習する</a></li>
-          <li><span>週末：Ⅱ＋Ⅲを3時間30分で通して書く</span><a class="btn btn-sm" href="#/mock">通し模試</a></li>
-          <li><span>前回の答案の改善点を確認する</span><a class="btn btn-sm" href="#/practice">一覧へ</a></li>
+          ${plan.items.map(([t, href]) => `<li><span>${U.esc(t)}</span><a class="btn btn-sm ${href === '#/practice' ? 'btn-primary' : ''}" href="${href}">開く</a></li>`).join('')}
         </ul>
+        <div class="small muted" style="margin-top:10px">今週の答案：Ⅱ-1 ${weekKinds('II-1')}本／目標3　Ⅱ-2・Ⅲ ${weekKinds('II-2') + weekKinds('III')}本／目標1　<a href="#/settings">週間計画の考え方</a></div>
         ${lastNotes.length ? `<h3 style="font-size:13px; margin:16px 0 6px">最近の改善メモ</h3><ul class="list-plain small">${lastNotes.map((a) => `<li style="display:block"><b>${U.esc(a.theme)}</b><div class="muted">${U.esc(a.note)}</div></li>`).join('')}</ul>` : ''}
       </div>
       <div class="card">
@@ -172,6 +187,14 @@ Pages.settings = async (view) => {
       <label class="field"><span>筆記試験日</span><input type="date" name="examDate" value="${U.esc(s.examDate)}"><small>受験申込み案内で公表された日付を入力してください。</small></label>
       <label class="field"><span>1日の目標学習時間（分）</span><input type="number" name="dailyGoal" min="5" value="${U.esc(s.dailyGoal)}"></label>
     </div></div>
+    <div class="card"><h2>週間計画の考え方（平日 朝30分・週末 2時間）</h2>
+      <ul class="small" style="padding-left:18px; margin:0">
+        <li><b>平日（月・水・金）</b>はⅡ-1を1枚ずつ。Ⅱ-1は1枚35分の問題なので、朝30分に収まる唯一の形式です。「4段構成」カードを下敷きに、メカニズムと数値を必ず入れます。</li>
+        <li><b>平日（火・木）</b>は前日の答案をAI添削にかけ、指摘を反省メモに残します。メモは次のAI添削の依頼文に自動で添えられ、同じ指摘の再発を監視します。</li>
+        <li><b>土曜</b>はⅡ-2（70分）とⅢ（105分）を隔週で。<b>日曜</b>は土曜の答案の書き直しです。「書きっぱなし」を作らないことが、過去3回との最大の違いになります。</li>
+        <li><b>月1回</b>（第1土曜）は通し模試3時間30分を手書きで行い、Ⅲから着手する順も試します。月1回は合格者や講師など人の添削を受け、AI添削との差を確認します。</li>
+        <li>合格ラインはⅡ＋Ⅲ合計60%。Ⅲが安定してA〜Bなら、Ⅱを18/30以上に引き上げることが合否を分けます。</li>
+      </ul></div>
     <div class="card"><h2>バックアップ</h2>
       <p class="muted small" style="margin-top:-6px">データはこのブラウザの中だけに保存されています。PCの買い替えやブラウザのデータ削除に備えて、定期的に書き出してください。スマホとPCでデータを移すときにも使えます。</p>
       <div class="actions"><button class="btn" id="exp">⬇ すべてのデータを書き出す</button><label class="btn">⬆ バックアップから復元<input type="file" id="imp" accept=".json" hidden></label></div></div>`;

@@ -10,9 +10,16 @@ window.Mock = (() => {
   ];
   const REVIEW = 15;
   const TOTAL = PLAN.reduce((a, p) => a + p.minutes, 0) + REVIEW;
-  // 設問の開始予定時刻（分）
-  const startAt = (i) => PLAN.slice(0, i).reduce((a, p) => a + p.minutes, 0);
-  return { PLAN, REVIEW, TOTAL, startAt };
+  // 着手順。本番は順番自由なので、配点の大きいⅢから書く順も練習できるようにする
+  const ORDERS = {
+    std: { label: 'Ⅱ-1 → Ⅱ-2 → Ⅲ（出題順）', kinds: ['II-1', 'II-2', 'III'] },
+    iii: { label: 'Ⅲ → Ⅱ-1 → Ⅱ-2（Ⅲ先行。Ⅲの分量不足を防ぐ）', kinds: ['III', 'II-1', 'II-2'] },
+    iii2: { label: 'Ⅲ → Ⅱ-2 → Ⅱ-1（配点順）', kinds: ['III', 'II-2', 'II-1'] },
+  };
+  const of = (a) => ({ label: a.planLabel || PLAN.find((p) => p.kind === a.kind)?.label || a.kind, minutes: a.planMinutes || PLAN.find((p) => p.kind === a.kind)?.minutes || 30 });
+  // 設問の開始予定時刻（分）：模試の答案セット（着手順）から計算する
+  const startAt = (set, i) => set.slice(0, i).reduce((s, a) => s + of(a).minutes, 0);
+  return { PLAN, REVIEW, TOTAL, ORDERS, of, startAt };
 })();
 
 /* ---------- 模試の準備（問題の選択） ---------- */
@@ -31,6 +38,8 @@ Pages.mock = async (view) => {
     <div class="card">
       <h2>時間配分の目安</h2>
       <div class="plan-bar">${Mock.PLAN.map((p) => `<div style="flex:${p.minutes}"><b>${p.label}</b> ${p.minutes}分</div>`).join('')}<div style="flex:${Mock.REVIEW}" class="rev">見直し ${Mock.REVIEW}分</div></div>
+      <label class="field" style="margin-top:12px"><span>着手順</span><select id="order">${Object.entries(Mock.ORDERS).map(([k, o]) => `<option value="${k}" ${k === (localStorage.getItem('mock.order') || 'std') ? 'selected' : ''}>${o.label}</option>`).join('')}</select>
+        <small>過去の受験ではⅢが時間切れでCになったことがあります。Ⅲ先行で、Ⅲを確実に3枚書き切る練習を月1回入れます。</small></label>
       <ul class="small muted" style="margin:10px 0 0; padding-left:18px">
         <li>各設問とも、最初の5分で骨子（見出しと要点）を作ってから書き始めます。</li>
         <li>目標時間を過ぎたら、<b>未完成でも次の設問に進みます</b>。Ⅲの3枚を白紙に近い状態で終えるのが最悪の結果です。</li>
@@ -55,9 +64,13 @@ Pages.mock = async (view) => {
     const sel = U.formData(view.querySelector('#pick'));
     if (Mock.PLAN.some((p) => !sel[p.kind])) return U.toast('すべての形式の問題を選んでください', 'err');
     const mockId = DB.uid();
-    for (const p of Mock.PLAN) {
-      const q = questions.find((x) => x.id === sel[p.kind]);
-      await DB.put('answers', { qid: q.id, kind: q.kind, theme: q.theme, question: q.text, text: '', memo: '', elapsed: 0, done: false, mockId, mockOrder: Mock.PLAN.indexOf(p) });
+    const orderKey = view.querySelector('#order').value;
+    localStorage.setItem('mock.order', orderKey);
+    const kinds = Mock.ORDERS[orderKey].kinds;
+    for (const kind of kinds) {
+      const p = Mock.PLAN.find((x) => x.kind === kind);
+      const q = questions.find((x) => x.id === sel[kind]);
+      await DB.put('answers', { qid: q.id, kind: q.kind, theme: q.theme, question: q.text, text: '', memo: '', elapsed: 0, done: false, mockId, mockOrder: kinds.indexOf(kind), planLabel: p.label, planMinutes: p.minutes });
     }
     location.hash = `#/mock/${mockId}`;
   };
@@ -76,7 +89,7 @@ Pages.mockRun = async (view, { id }) => {
 
   view.innerHTML = `
     <div class="page-head">
-      <div><p class="small"><a href="#/mock">← 通し模試</a></p><h1>選択科目 通し模試</h1><p>Ⅱ-1 → Ⅱ-2 → Ⅲ・3時間30分</p></div>
+      <div><p class="small"><a href="#/mock">← 通し模試</a></p><h1>選択科目 通し模試</h1><p>${set.map((a) => Mock.of(a).label).join(' → ')}・3時間30分</p></div>
       <div class="actions"><button class="btn" id="toggle">▶ 開始</button><button class="btn btn-primary" id="next"></button></div>
     </div>
     <div class="card timer" id="tm">
@@ -84,9 +97,9 @@ Pages.mockRun = async (view, { id }) => {
       <div><div class="small muted">この設問の目標まで</div><div class="big-num" id="leftQ"></div></div>
       <div><div class="small muted">使用行数</div><div class="big-num"><span id="rows">0</span><small id="cap"></small></div></div>
       <div style="flex:1; min-width:260px"><div class="small muted">進み具合（赤い線＝予定）</div>
-        <div class="plan-bar small" id="pb">${Mock.PLAN.map((p, i) => `<div style="flex:${p.minutes}" data-seg="${i}">${p.label}</div>`).join('')}<div style="flex:${Mock.REVIEW}" class="rev">見直し</div><i id="mark"></i></div></div>
+        <div class="plan-bar small" id="pb">${set.map((a, i) => `<div style="flex:${Mock.of(a).minutes}" data-seg="${i}">${Mock.of(a).label}</div>`).join('')}<div style="flex:${Mock.REVIEW}" class="rev">見直し</div><i id="mark"></i></div></div>
     </div>
-    <div class="tabs" id="tabs">${set.map((a, i) => `<button data-i="${i}" class="${i === cur ? 'on' : ''}">${Mock.PLAN[i].label}　<span class="small">${U.esc(a.theme)}</span>${a.done ? ' ✓' : ''}</button>`).join('')}</div>
+    <div class="tabs" id="tabs">${set.map((a, i) => `<button data-i="${i}" class="${i === cur ? 'on' : ''}">${Mock.of(a).label}　<span class="small">${U.esc(a.theme)}</span>${a.done ? ' ✓' : ''}</button>`).join('')}</div>
     <div class="answer-layout">
       <div>
         <details class="card q-card" open><summary><b>問題</b></summary><div class="q-text" id="qtext"></div></details>
@@ -109,7 +122,7 @@ Pages.mockRun = async (view, { id }) => {
     $('#ans').value = a.text || '';
     $('#ans').style.height = `calc(var(--line) * ${cap} + 2px)`;
     $('#cap').textContent = `/${cap}`;
-    $('#next').textContent = cur < set.length - 1 ? `${Mock.PLAN[cur].label} を終えて次の設問へ →` : '模試を終了して振り返る';
+    $('#next').textContent = cur < set.length - 1 ? `${Mock.of(a).label} を終えて次の設問へ →` : '模試を終了して振り返る';
     view.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', Number(b.dataset.i) === cur));
     update();
   }
@@ -123,7 +136,7 @@ Pages.mockRun = async (view, { id }) => {
     $('#leftAll').textContent = fmt(totalSec - all);
     $('#leftAll').classList.toggle('danger-text', totalSec - all < 600);
     // この設問の目標終了時刻（全体の経過時間ベース）までの残り
-    const deadline = (Mock.startAt(cur) + Mock.PLAN[cur].minutes) * 60;
+    const deadline = (Mock.startAt(set, cur) + Mock.of(a).minutes) * 60;
     $('#leftQ').textContent = fmt(deadline - all);
     $('#leftQ').classList.toggle('danger-text', deadline - all < 300);
     $('#mark').style.left = Math.min(100, (all / totalSec) * 100) + '%';
@@ -152,7 +165,7 @@ Pages.mockRun = async (view, { id }) => {
     await flush();
     set[cur].done = true;
     await DB.put('answers', set[cur]);
-    if (cur < set.length - 1) { cur++; load(); U.toast(`${Mock.PLAN[cur].label} に進みました。まず5分で骨子を作りましょう。`); return; }
+    if (cur < set.length - 1) { cur++; load(); U.toast(`${Mock.of(set[cur]).label} に進みました。まず5分で骨子を作りましょう。`); return; }
     clearInterval(timer);
     for (const a of set) { if (!a.done) { a.done = true; await DB.put('answers', a); } }
     await Log.add('practice', Math.round(elapsedAll() / 60), set.length);
@@ -173,9 +186,9 @@ async function mockReview(view, set) {
     <div class="card">
       <h2>時間配分と分量</h2>
       <div class="table-wrap"><table class="table"><thead><tr><th>設問</th><th class="r">目標</th><th class="r">実際</th><th class="r">差</th><th class="r">行数</th><th>判定</th><th></th></tr></thead><tbody>
-        ${set.map((a, i) => { const plan = Mock.PLAN[i].minutes; const act = Math.round((a.elapsed || 0) / 60); const cap = Exam.FORMATS[a.kind].sheets * Exam.ROWS; const rows = Exam.rowsUsed(a.text); const fill = rows / cap;
+        ${set.map((a, i) => { const plan = Mock.of(a).minutes; const act = Math.round((a.elapsed || 0) / 60); const cap = Exam.FORMATS[a.kind].sheets * Exam.ROWS; const rows = Exam.rowsUsed(a.text); const fill = rows / cap;
           const verdict = fill < 0.5 ? '<span class="badge badge-red">分量不足（C相当のおそれ）</span>' : fill < 0.8 ? '<span class="badge badge-amber">やや不足</span>' : act > plan + 10 ? '<span class="badge badge-amber">時間超過</span>' : '<span class="badge badge-green">OK</span>';
-          return `<tr><td><b>${Mock.PLAN[i].label}</b><div class="small muted">${U.esc(a.theme)}</div></td><td class="r">${plan}分</td><td class="r">${act}分</td><td class="r ${act > plan ? 'danger-text' : ''}">${act - plan >= 0 ? '+' : ''}${act - plan}分</td><td class="r">${rows}/${cap}</td><td>${verdict}</td><td><a class="btn btn-sm" href="#/practice/${a.id}">自動チェック・自己採点</a></td></tr>`; }).join('')}
+          return `<tr><td><b>${Mock.of(a).label}</b><div class="small muted">${U.esc(a.theme)}</div></td><td class="r">${plan}分</td><td class="r">${act}分</td><td class="r ${act > plan ? 'danger-text' : ''}">${act - plan >= 0 ? '+' : ''}${act - plan}分</td><td class="r">${rows}/${cap}</td><td>${verdict}</td><td><a class="btn btn-sm" href="#/practice/${a.id}">自動チェック・自己採点</a></td></tr>`; }).join('')}
       </tbody></table></div>
       <p class="small muted" style="margin:10px 0 0">Ⅱ＋Ⅲの合計で60%以上が合格基準です。Ⅲ（3枚）の配点が最も大きいため、Ⅲが「分量不足」なら、Ⅱの出来にかかわらず不合格になりやすい構造です。</p>
     </div>

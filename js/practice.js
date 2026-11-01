@@ -21,13 +21,59 @@ window.Exam = (() => {
   }
   const charCount = (text) => [...String(text || '').replace(/\n/g, '')].length;
 
-  // 自動チェック。論文の「型」と「書き方」の基本的な抜け漏れを機械的に拾う
-  function check(text, kind, cards) {
+  // 設問番号の見出し「1.」「(1)」「（１）」などの位置で答案を分割する。parts[i] = 設問(i)の本文（parts[0] = 冒頭）
+  const headRe = (i) => { const z = '０１２３４５６７８９'[i]; return new RegExp(`(^|\\n)\\s*([（(]\\s*[${i}${z}]\\s*[)）]|[${i}${z}]\\s*[.．、])`); };
+  // 「1.」形式と「(1)」形式を別々に探し、多く見つかった方を設問の見出しとみなす（課題の小見出し (1)(2)(3) と区別するため）
+  const STYLES = [(i) => `[${i}${'０１２３４５６７８９'[i]}]\\s*[.．、]`, (i) => `[（(]\\s*[${i}${'０１２３４５６７８９'[i]}]\\s*[)）]`];
+  function splitParts(text, n) {
+    let idx = [];
+    for (const st of STYLES) {
+      const cand = [];
+      for (let i = 1; i <= n; i++) { const m = text.match(new RegExp(`(^|\\n)\\s*${st(i)}`)); cand.push(m ? m.index : -1); }
+      if (cand.filter((x) => x >= 0).length > idx.filter((x) => x >= 0).length) idx = cand;
+    }
+    if (!idx.length) idx = Array(n).fill(-1);
+    const parts = [text.slice(0, idx.find((x) => x >= 0) ?? text.length)];
+    for (let i = 0; i < n; i++) {
+      if (idx[i] < 0) { parts.push(''); continue; }
+      const next = idx.slice(i + 1).find((x) => x > idx[i]);
+      parts.push(text.slice(idx[i], next ?? text.length));
+    }
+    return parts;
+  }
+
+  // 過去の添削で繰り返し指摘された弱点（Studying・LuckyOcean・匠先生・実践講座の講評から抽出）
+  const FEEDBACK = [
+    { kinds: ['I', 'III'], text: '課題は「なすべきこと（例：調整力の確保）」で統一し、「障害物（例：慣性力の低下）」と混在させない。課題ごとに観点を明記し、3つの観点が重ならないようにする。' },
+    { kinds: ['I', 'III'], text: '問題文が観点の明記を求めていないときは「〜の観点」を書かない（題意に従う）。' },
+    { kinds: ['I', 'III'], text: '設問(2)の各解決策の末尾で「〜により課題○○が解決される」と課題とのつながりを明示する。設問(3)のリスクは設問(2)の解決策から派生するものに限る（設問1→2→3の連動）。' },
+    { kinds: ['I', 'II-1', 'II-2', 'III'], text: '数値（kV・MW・％・年・時間・回数・費用）で定量的に説明する。「大幅に」「適切に」は数値に置き換える。' },
+    { kinds: ['II-1'], text: 'Ⅱ-1は「背景・原理 → 現象・発生メカニズム → 対策 → 数値・規格」の4段で書く。見出しを並べて終わらず、メカニズム（なぜ起きるか）を文章で説明する。見出しは2〜3個まで。' },
+    { kinds: ['II-2'], text: 'Ⅱ-2(2)の留意点は「何が起きるおそれがあるか（リスク）」を起点に書く。(3)の調整は「誰と・何を・どのように」をステークホルダー別に書く（例：運用部門と停電枠、メーカーと納期、自治体と搬入経路）。' },
+    { kinds: ['I', 'II-1', 'II-2', 'III'], text: '題意ズレを防ぐため、問題文の重要語（例：供給と需給、設備と系統）をそのまま使う。略語は初出で正式名称を書く。' },
+    { kinds: ['I', 'III'], text: '得意分野（変電：変圧器・GIS・保護リレー・変電所更新）の具体例に引き込む。一般論で終わらせない。' },
+    { kinds: ['I', 'II-1', 'II-2', 'III'], text: '空白行を作らない。1行に満たない改行を繰り返さない（分量不足・読みにくさの原因）。同音異義語（消化／消火、対象／対称）と誤字を見直し時間で確認する。' },
+  ];
+
+  // 問題文から「重要語」（2字以上の漢字・カタカナ語）を取り出す。定型の設問文や一般語は除く
+  const STOP = ['技術者', '立場', '観点', '課題', '解決策', 'リスク', '対策', '状況', '以下', '内容', '業務', '担当', '責任者', '関係者', '調整', '方策', '手順', '留意', '工夫', '調査', '検討', '事項', '効率', '効果', '前問', '抽出', '明記', '複数', '新た', '実行', '専門', '技術', '倫理', '社会', '持続', '可能性', '要件', '留意点', '題意', '多面的', '重要', '列挙', '項目', '必要', '場合', '説明', '記述', '理由', '回答', '問題', '選択', '科目', '必須', '以上', '近年', '一方', '実現', '確保', '両立', '求め', '踏まえ', '考え', '対応', '提案', '事項', '意見', '具体的', '計画', '中心', '人', '者', '上', '下', '中', '後', '前', '例', '等', '減少', '低下', '不足', '増加', '増大', '顕在化', '拡大', '導入', '発生', '進め', '整備', '構築', '活用', '利用', '維持', '推進', '取組', '取り組み', '期待', '要求'];
+  function keyTerms(question) {
+    const q = String(question || '').split(/\n\s*[（(]?[1１]\s*[)）.．]/)[0]; // 設問(1)以降の定型文は除く
+    const words = q.match(/[一-鿿]{2,}|[゠-ヿーー]{3,}|[A-Z][A-Za-z0-9]{1,}/g) || [];
+    return [...new Set(words.filter((w) => !STOP.includes(w) && ![...w].every((ch) => STOP.includes(ch))))];
+  }
+
+  // 自動チェック。論文の「型」と「書き方」の基本的な抜け漏れに加え、過去の添削で指摘された弱点を機械的に拾う
+  function check(text, kind, cards, question) {
+    text = String(text || '');
     const F = FORMATS[kind] || FORMATS.free;
     const rows = rowsUsed(text);
     const capacity = F.sheets * ROWS;
     const items = [];
     const add = (level, title, detail) => items.push({ level, title, detail });
+    const parts = splitParts(text, F.parts || 0);
+    const lines = text.split('\n');
+    const isHead = (l) => l.trim() && [...l.trim()].length <= 16 && !/[。、]/.test(l.trim());
 
     const fill = rows / capacity;
     if (rows > capacity) add('ng', '答案用紙からはみ出しています', `${rows}行／${capacity}行。本番では枠外は採点されません。`);
@@ -59,9 +105,75 @@ window.Exam = (() => {
       if (miss.length) add('ng', '設問に対応する見出しが不足しています', `設問 (${miss.join(')(')}) に対応する見出しが見つかりません。「1.」「(1)」のように設問番号と対応させると、採点者が読みやすくなります。`);
       else add('ok', `設問(1)〜(${F.parts})の見出しがそろっています`, '');
     }
-    if ((kind === 'I' || kind === 'III') && !/観点/.test(text)) add('ng', '「観点」が明記されていません', '設問(1)では、課題ごとに「〇〇の観点から」と観点を明記することが求められます。');
-    if ((kind === 'I' || kind === 'III') && !/リスク/.test(text)) add('warn', '「リスク」の記述が見当たりません', '設問(3)では、解決策を実行しても新たに生じるリスクと、その対策を書きます。');
-    if (kind === 'I' && !/倫理/.test(text)) add('warn', '「倫理」の記述が見当たりません', '設問(4)では、技術者倫理と社会の持続可能性の観点を両方書きます。');
+    const asksView = !question || /観点/.test(question);
+    if (kind === 'I' || kind === 'III') {
+      // 指摘①②：観点の明記と、観点が不要な問題で書かない
+      const views = [...(parts[1] || text).matchAll(/([^\s、。（()）・：:]{2,10})の観点/g)].map((m) => m[1] + 'の観点');
+      if (asksView && !views.length) add('ng', '「観点」が明記されていません', '設問(1)では、課題ごとに「〇〇の観点から」と観点を明記することが求められます。');
+      else if (asksView && views.length < 3) add('warn', `観点が${views.length}つしか見つかりません`, `${views.join('、')}。課題3つにそれぞれ異なる観点（例：供給力・系統技術・経済性）を付けます。`);
+      else if (asksView && new Set(views).size < views.length) add('warn', '観点が重複している可能性があります', `${views.join('、')}。3つの観点は互いに異なる切り口にします（過去の指摘：観点の整合）。`);
+      else if (asksView) add('ok', `観点が${views.length}つ明記されています`, views.join('、'));
+      if (!asksView && /観点/.test(text)) add('warn', '問題文は「観点」を求めていません', '題意にない「〇〇の観点」は書かず、その分を課題の内容に使います（過去の指摘：観点不要時は書かない）。');
+      // 指摘①：課題の表記（なすべきこと／障害物の混在）
+      const p1 = (parts[1] || '').split('\n').filter(isHead).join('\n'); // 課題の見出し行だけを見る
+      const todo = (p1.match(/(の確保|の構築|の整備|の確立|の強化|の低減|の向上|の推進|の高度化|の実現|の対応|への対応|の抑制)/g) || []).length;
+      const obstacle = (p1.match(/(の低下|の不足|の増大|の増加|の減少|の老朽化|の高経年化|のおそれ|が困難|が不足|が増大)/g) || []).length;
+      if (todo && obstacle) add('warn', '課題の表記が「なすべきこと」と「障害物」で混在しています', `なすべきこと形${todo}箇所・障害物形${obstacle}箇所。「〇〇の確保」「〇〇の低減」のように、課題はすべて「なすべきこと」で統一します（過去の指摘：課題の立て方）。`);
+      // 指摘③：解決策と課題の連動、設問(3)の連動
+      const p2 = parts[2] || '';
+      if (p2 && !/(解決|達成|実現|解消|克服)(する|できる|される|に寄与|につながる)/.test(p2)) add('warn', '解決策が課題を解決することが明示されていません', '各解決策の末尾に「〜により、課題である〇〇が解決される」と書き、課題と解決策のつながりを示します（過去の指摘：設問1→2の連動）。');
+      const p3 = parts[3] || '';
+      if (!/リスク/.test(text)) add('warn', '「リスク」の記述が見当たりません', '設問(3)では、解決策を実行しても新たに生じるリスクと、その対策を書きます。');
+      else if (p3 && !/(解決策|対策|上記|前述|[（(][1-3１-３][)）]|①|②|③)/.test(p3.replace(/^.*?\n/, ''))) add('warn', '設問(3)のリスクが設問(2)の解決策と結び付いていません', '「解決策(1)の〇〇を実行すると、新たに△△のリスクが生じる」と、どの解決策から派生するリスクかを明示します（過去の指摘：設問3の連動）。');
+      if (p3 && /リスク/.test(p3) && !/(対策|対応|低減|回避|抑制|防止|軽減)/.test(p3)) add('ng', '設問(3)にリスクへの対策がありません', 'リスクを挙げるだけでなく、その対策まで書きます。');
+      if (kind === 'I' && !/倫理/.test(text)) add('warn', '「倫理」の記述が見当たりません', '設問(4)では、技術者倫理と社会の持続可能性の観点を両方書きます。');
+      // 指摘⑧：得意土俵（変電）
+      const dohyo = ['変圧器', '変電所', 'GIS', '遮断器', '保護リレー', '開閉装置', '母線', '避雷器', '調相', '油中ガス', 'LTC', 'IEC 61850', 'IEC61850'];
+      const dh = dohyo.filter((w) => text.includes(w));
+      if (!dh.length) add('warn', '得意分野（変電）の具体例がありません', '解決策やリスクのどこかに、変圧器・GIS・保護リレー・変電所更新など自分の土俵の具体例を1つ入れて、専門性を示します（過去の指摘：得意土俵へ）。');
+      else add('ok', `得意分野（変電）の用語：${dh.join('、')}`, '');
+    }
+    if (kind === 'II-1') {
+      // 指摘⑤：メカニズムの説明と見出し過多
+      if (!/(原理|メカニズム|原因|のため|により|起因|生じる|発生する|になる)/.test(text)) add('ng', '発生原因・メカニズムの説明がありません', 'Ⅱ-1は「背景・原理 → 現象・なぜ起きるか → 対策 → 数値・規格」の4段で、因果を文章で説明します（過去の指摘：Ⅱ-1 B−の原因）。');
+      const heads = lines.filter(isHead).length;
+      if (heads > 4) add('warn', `見出し・箇条書きの行が${heads}行あります`, 'Ⅱ-1（1枚）では見出しは2〜3個にとどめ、残りは説明の文章で埋めます（過去の指摘：見出し過多）。');
+      if (!/(規格|JEC|JIS|IEC|電技|解釈|ガイドライン|基準)/.test(text)) add('warn', '規格・基準への言及がありません', '関連する規格（JEC・JIS・IEC・電気設備技術基準など）を1つ挙げると専門的学識の加点になります。');
+    }
+    if (kind === 'II-2') {
+      // 指摘⑥：留意点はリスク起点、調整はステークホルダー別
+      const p2 = parts[2] || '';
+      if (p2 && !/(リスク|おそれ|懸念|支障|防止|回避)/.test(p2)) add('warn', '設問(2)の留意点が「リスク起点」になっていません', '各手順で「〇〇が起きるおそれがあるため、△△に留意する」とリスクを起点に書きます（過去の指摘：Ⅱ-2 B−の原因）。');
+      const p3 = parts[3] || '';
+      const sh = ['需要家', '自治体', '発注者', '施工', 'メーカー', '製造者', '工事会社', '運用部門', '保守部門', '関係部署', '行政', '住民', '顧客', '系統運用者', '一般送配電', '発電事業者', '協力会社', '設計部門', '営業部門', '電力会社', '労働基準監督署', '警察', '道路管理者'];
+      const found = sh.filter((w) => p3.includes(w));
+      if (p3 && found.length < 2) add('warn', '設問(3)の調整相手が具体的ではありません', `見つかった相手：${found.join('、') || 'なし'}。「誰と・何を・どのように調整するか」を相手別に3つ程度書きます（過去の指摘：調整は誰と何をどう）。`);
+      else if (p3) add('ok', `調整相手：${found.join('、')}`, '');
+    }
+    // 指摘④：定量性
+    const nums = (text.match(/[0-9０-９][0-9０-９.,．，]*\s*(kV|kA|MW|MVA|MWh|kW|kWh|GW|Hz|V|A|％|%|℃|K|年|か月|ヶ月|カ月|時間|分|秒|回|倍|日|週間|割|件|万円|億円|円|km|m|mm|t|ppm|dB|台|基|回線|人|名|件|cm|MPa)/g) || []).length;
+    if (!nums) add('ng', '数値がひとつもありません', '電圧階級・容量・年数・時間・率などの数値を入れて定量的に説明します（過去の指摘：定量化。「大幅に」「適切に」は数値に置き換える）。');
+    else if (nums < 3) add('warn', `数値が${nums}箇所しかありません`, '各設問に1つ以上は数値（kV・MW・％・年・時間）を入れましょう。');
+    else add('ok', `数値を${nums}箇所使用`, '');
+    // 指摘⑦：題意（問題文の重要語の使用率）
+    if (question) {
+      const keys = keyTerms(question);
+      if (keys.length) {
+        const unused = keys.filter((w) => !text.includes(w));
+        const rate = Math.round(((keys.length - unused.length) / keys.length) * 100);
+        if (rate < 50) add('ng', `問題文の重要語の使用率が${rate}%です`, `未使用：${unused.slice(0, 8).join('、')}。問題文の言葉をそのまま使うと題意ズレを防げます（過去の指摘：題意ズレ、供給と需給の取り違え）。`);
+        else if (unused.length) add('warn', `問題文の重要語の使用率は${rate}%`, `未使用：${unused.slice(0, 8).join('、')}。意図して使っていないか確認します。`);
+        else add('ok', '問題文の重要語をすべて使っています', '');
+      }
+    }
+    // 指摘⑨：空白行・改行過多・同音異義語
+    const blank = lines.filter((l, i) => i > 0 && !l.trim() && i < lines.length - 1).length;
+    if (blank) add('ng', `空白行が${blank}行あります`, '答案用紙の空白行は分量不足とみなされます。見出しの前後も空けずに詰めて書きます（過去の指摘：半ページ空白・改行過多）。');
+    const shortLines = lines.filter((l) => l.trim() && !isHead(l) && [...l].reduce((a, ch) => a + cellWidth(ch), 0) < COLS * 0.5).length;
+    if (shortLines > Math.max(3, rows * 0.15)) add('warn', `1行の半分に満たない行が${shortLines}行あります`, '箇条書きや短い改行が多いと、マス目が埋まらず分量不足になります。文章でつないで書きます（過去の指摘：改行過多）。');
+    const typo = [[/消化(設備|器|活動|する|を)/, '消化 → 消火'], [/対称(設備|機器|範囲|者|と|に|の設備)/, '対称 → 対象'], [/製御/, '製御 → 制御'], [/低格/, '低格 → 定格'], [/絶援/, '絶援 → 絶縁'], [/射断/, '射断 → 遮断'], [/以外に(も)?(大き|重要|効果)/, '以外に → 意外に？'], [/補償(する|して)品質/, '補償 → 保証？'], [/需給力/, '需給力 → 供給力？'], [/供給バランス/, '供給バランス → 需給バランス？']];
+    const typos = typo.filter(([re]) => re.test(text)).map(([, m]) => m);
+    if (typos.length) add('ng', '誤字・同音異義語の疑いがあります', `${typos.join('、')}（過去の指摘：消化／消火の誤記）。`);
 
     // カードの用語を「（）」「・」「と」で区切った語句ごとに照合する（例：「変圧器の損失と低減策」→「変圧器の損失」「低減策」）
     const terms = new Set();
@@ -85,17 +197,25 @@ window.Exam = (() => {
     ['技術者倫理', '公益の確保、法令遵守、持続可能性の観点を具体的に書けているか（Ⅰ）'],
   ];
 
-  function aiPrompt(q, ans, kind) {
+  // history: 過去の答案の「反省・次回への改善点」メモ（新しい順）
+  function aiPrompt(q, ans, kind, history = []) {
     const F = FORMATS[kind] || FORMATS.free;
+    const fb = FEEDBACK.filter((f) => f.kinds.includes(kind)).map((f, i) => `${i + 1}. ${f.text}`).join('\n');
+    const hist = history.filter(Boolean).slice(0, 5).map((h) => `- ${h}`).join('\n');
     return `あなたは技術士第二次試験（電気電子部門・電力・エネルギーシステム）の経験豊富な採点者・添削指導者です。
 以下の答案を、本試験の採点基準（技術士に求められる資質能力＝コンピテンシー：専門的学識、問題解決、評価、マネジメント、コミュニケーション、リーダーシップ、技術者倫理）に沿って添削してください。
 
+# 受験者の背景（添削で必ず確認してほしいこと）
+受験者は変電設備（変圧器・GIS・保護リレー・変電所更新）が専門です。過去3回の受験と複数の添削講座で、知識の正しさは評価される一方、次の点が繰り返し指摘されています。今回の答案でこれらが再発していないかを、1項目ずつ「再発あり／なし」で判定し、再発している箇所を引用してください。
+${fb}
+${hist ? `\n# 受験者自身の最近の反省メモ\n${hist}\n` : ''}
 # 出力してほしいこと
 1. 総合評価（A：合格水準／B：あと一歩／C：不合格水準）と、その理由
-2. 設問ごとの評価：設問に正対しているか、不足している観点
-3. 技術的な誤り・あいまいな記述の指摘（該当箇所を引用）
-4. 加点につながる具体的な改善案（追加すべきキーワードや、書き換え例）
-5. 次に練習すべきポイントを3つ
+2. 上記「繰り返し指摘されている点」の再発チェック（項目ごとに判定と該当箇所）
+3. 設問ごとの評価：設問に正対しているか（問題文の言葉を使っているか）、設問1→2→3が連動しているか
+4. 技術的な誤り・あいまいな記述・誤字の指摘（該当箇所を引用）
+5. 加点につながる具体的な改善案（追加すべき数値・規格・キーワードと、書き換え例。できれば変電分野の具体例で）
+6. 次に練習すべきポイントを3つ
 
 # 試験形式
 ${F.label}：600字（24字×25行）×${F.sheets}枚
@@ -107,7 +227,7 @@ ${q}
 ${ans}`;
   }
 
-  return { COLS, ROWS, FORMATS, rowsUsed, charCount, check, COMPETENCY, aiPrompt };
+  return { COLS, ROWS, FORMATS, rowsUsed, charCount, check, COMPETENCY, aiPrompt, FEEDBACK, keyTerms, splitParts };
 })();
 
 /* ---------- 練習の開始（問題の選択） ---------- */
@@ -274,7 +394,11 @@ Pages.review = async (view, { id }) => {
   const a = await DB.get('answers', id);
   const cards = await DB.all('cards');
   const F = Exam.FORMATS[a.kind] || Exam.FORMATS.free;
-  const r = Exam.check(a.text, a.kind, cards);
+  const r = Exam.check(a.text, a.kind, cards, a.question);
+  // 過去の反省メモ（同じ形式を優先、新しい順）をAI添削の依頼文に添える
+  const history = (await DB.all('answers')).filter((x) => x.id !== a.id && x.done && x.note)
+    .sort((x, y) => (x.kind === a.kind ? 0 : 1) - (y.kind === a.kind ? 0 : 1) || (y.updatedAt || '').localeCompare(x.updatedAt || ''))
+    .map((x) => `${Exam.FORMATS[x.kind]?.label || ''}「${x.theme}」：${x.note}`);
   a.selfScore = a.selfScore || {};
   const icon = { ok: '<span class="badge badge-green">OK</span>', warn: '<span class="badge badge-amber">注意</span>', ng: '<span class="badge badge-red">要改善</span>' };
 
@@ -286,8 +410,8 @@ Pages.review = async (view, { id }) => {
     </div>
     <div class="grid grid-2" style="align-items:start">
       <div>
-        <div class="card"><h2>自動チェック</h2><ul class="list-plain">${r.items.map((it) => `<li style="align-items:flex-start"><div><b>${U.esc(it.title)}</b>${it.detail ? `<div class="small muted">${U.esc(it.detail)}</div>` : ''}</div>${icon[it.level]}</li>`).join('')}</ul>
-          <p class="small muted" style="margin:8px 0 0">機械的なチェックです。内容の妥当性は、下の自己採点とAI添削・第三者の添削で確認しましょう。</p></div>
+        <div class="card"><div class="card-head"><h2>自動チェック</h2><span class="small muted">要改善 ${r.items.filter((i) => i.level === 'ng').length}・注意 ${r.items.filter((i) => i.level === 'warn').length}</span></div><ul class="list-plain">${r.items.map((it) => `<li style="align-items:flex-start"><div><b>${U.esc(it.title)}</b>${it.detail ? `<div class="small muted">${U.esc(it.detail)}</div>` : ''}</div>${icon[it.level]}</li>`).join('')}</ul>
+          <p class="small muted" style="margin:8px 0 0">機械的なチェックです。「過去の指摘」と書かれた項目は、これまでの添削講座で繰り返し指摘された弱点です。内容の妥当性は、下の自己採点とAI添削・第三者の添削で確認しましょう。</p></div>
         <div class="card"><h2>自己採点（コンピテンシー）</h2>
           <table class="table"><tbody>${Exam.COMPETENCY.map(([k, hint]) => `<tr><td><b>${k}</b><div class="small muted">${hint}</div></td>
             <td class="nowrap"><div class="seg" data-c="${k}">${[0, 1, 2].map((v) => `<button data-v="${v}" class="${a.selfScore[k] === v ? 'on' : ''}">${['×', '△', '○'][v]}</button>`).join('')}</div></td></tr>`).join('')}</tbody></table>
@@ -322,7 +446,7 @@ Pages.review = async (view, { id }) => {
     await DB.put('answers', a);
   }));
   $('#note').oninput = U.debounce(() => { a.note = $('#note').value; DB.put('answers', a); }, 500);
-  $('#ai').onclick = () => U.copy(Exam.aiPrompt(a.question, a.text, a.kind));
+  $('#ai').onclick = () => U.copy(Exam.aiPrompt(a.question, a.text, a.kind, history));
   $('#reopen').onclick = async () => {
     const copy = await DB.put('answers', { qid: a.qid, kind: a.kind, theme: a.theme, question: a.question, text: a.text, memo: a.memo, elapsed: 0, done: false });
     location.hash = `#/practice/${copy.id}`;

@@ -41,6 +41,7 @@
   window.addEventListener('hashchange', render);
   window.addEventListener('DOMContentLoaded', async () => {
     await Seed.load();
+    await Seed2.load();
     render();
   });
 })();
