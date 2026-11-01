@@ -38,7 +38,7 @@ Pages.home = async (view) => {
 
   view.innerHTML = `
     <div class="page-head">
-      <div><h1>技術士二次 合格ノート</h1><p>電気電子部門・発送配変電　${U.jpDate(U.ymd())}</p></div>
+      <div><h1>技術士二次 合格ノート</h1><p>電気電子部門・電力・エネルギーシステム　${U.jpDate(U.ymd())}</p></div>
       <div class="actions"><button class="btn" id="manual">＋ 学習時間を記録</button><a class="btn btn-primary" href="#/study">今日の復習（${due}枚）</a></div>
     </div>
 
@@ -147,7 +147,7 @@ Pages.career = async (view) => {
   $('#copyText').onclick = () => U.copy(body(U.formData($('#f'))));
   $('#ai').onclick = () => {
     const d = U.formData($('#f'));
-    U.copy(`あなたは技術士第二次試験（電気電子部門・発送配変電）の指導者です。以下は受験申込書の「業務内容の詳細」（720字以内）の下書きです。
+    U.copy(`あなたは技術士第二次試験（電気電子部門・電力・エネルギーシステム）の指導者です。以下は受験申込書の「業務内容の詳細」（720字以内）の下書きです。
 次の観点で添削し、改善した文案（720字以内）も示してください。
 1. 技術士にふさわしい「高度な専門的応用能力」を発揮した業務として読めるか
 2. 受験者の立場・役割と、主体的な判断が明確か

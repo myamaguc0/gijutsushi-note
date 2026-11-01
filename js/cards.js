@@ -59,7 +59,7 @@ Pages.cards = async (view) => {
 
   function edit(c) {
     const isNew = !c;
-    c = c || { cat: state.cat || cats[0] || '発送配変電', term: '', body: '定義：\n課題：\n対策：', box: 0, due: '', reviews: 0 };
+    c = c || { cat: state.cat || cats[0] || '電力・エネルギーシステム', term: '', body: '定義：\n課題：\n対策：', box: 0, due: '', reviews: 0 };
     U.modal({
       title: isNew ? 'カードを追加' : 'カードを編集', wide: true,
       body: `<div class="form-grid" id="cf">
