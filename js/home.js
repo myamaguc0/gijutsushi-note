@@ -57,6 +57,7 @@ Pages.home = async (view) => {
         <ul class="list-plain">
           <li><span>キーワードカードの復習</span>${due ? `<a class="btn btn-sm btn-primary" href="#/study">${due}枚</a>` : '<span class="badge badge-green">完了</span>'}</li>
           <li><span>論文を1本（Ⅱ-1なら35分）書く</span><a class="btn btn-sm" href="#/practice">練習する</a></li>
+          <li><span>週末：Ⅱ＋Ⅲを3時間30分で通して書く</span><a class="btn btn-sm" href="#/mock">通し模試</a></li>
           <li><span>前回の答案の改善点を確認する</span><a class="btn btn-sm" href="#/practice">一覧へ</a></li>
         </ul>
         ${lastNotes.length ? `<h3 style="font-size:13px; margin:16px 0 6px">最近の改善メモ</h3><ul class="list-plain small">${lastNotes.map((a) => `<li style="display:block"><b>${U.esc(a.theme)}</b><div class="muted">${U.esc(a.note)}</div></li>`).join('')}</ul>` : ''}

@@ -119,7 +119,7 @@ Pages.practice = async (view) => {
   view.innerHTML = `
     <div class="page-head">
       <div><h1>論文練習</h1><p>本番と同じ答案用紙（24字×25行）と制限時間で練習し、書き終えたら自動チェックと添削依頼文で振り返ります。</p></div>
-      <div class="actions"><button class="btn" id="addQ">＋ 問題を追加</button></div>
+      <div class="actions"><button class="btn" id="addQ">＋ 問題を追加</button><a class="btn btn-primary" href="#/mock">⏱ 選択科目 通し模試（3時間30分）</a></div>
     </div>
     <div class="card">
       <div class="toolbar"><div class="seg" id="seg">${Object.entries(Exam.FORMATS).filter(([k]) => k !== 'free').map(([k, f]) => `<button data-k="${k}">${f.label}</button>`).join('')}</div>
@@ -240,7 +240,7 @@ Pages.answer = async (view, { id }) => {
     $('#paceMark').style.left = (plan / capacity) * 100 + '%';
   }
 
-  const save = U.debounce(() => { a.text = $('#ans').value; a.memo = $('#memo').value; DB.put('answers', a); }, 800);
+  const save = U.debounce(() => { if (!$('#ans')) return; a.text = $('#ans').value; a.memo = $('#memo').value; DB.put('answers', a); }, 800);
   $('#ans').addEventListener('input', () => { update(); save(); });
   $('#memo').addEventListener('input', save);
 
@@ -266,7 +266,7 @@ Pages.answer = async (view, { id }) => {
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   };
   update();
-  return () => { clearInterval(timer); if (!a.done) { a.text = $('#ans').value; DB.put('answers', a); } };
+  return () => { clearInterval(timer); if (!a.done && $('#ans')) { a.text = $('#ans').value; DB.put('answers', a); } };
 };
 
 /* ---------- 振り返り（自動チェック・自己採点・AI添削依頼） ---------- */
@@ -280,7 +280,7 @@ Pages.review = async (view, { id }) => {
 
   view.innerHTML = `
     <div class="page-head">
-      <div><p class="small"><a href="#/practice">← 論文練習</a></p><h1>振り返り：${U.esc(a.theme)}</h1>
+      <div><p class="small"><a href="${a.mockId ? '#/mock/' + a.mockId : '#/practice'}">← ${a.mockId ? '模試の振り返り' : '論文練習'}</a></p><h1>振り返り：${U.esc(a.theme)}</h1>
         <p>${F.label}・${r.rows}/${r.capacity}行（${r.chars.toLocaleString()}字）・所要時間 ${a.elapsed ? Math.round(a.elapsed / 60) + '分' : '—'}／制限 ${F.minutes}分</p></div>
       <div class="actions"><button class="btn" id="reopen">答案を書き直す</button><button class="btn" id="del">削除</button><button class="btn btn-primary" id="ai">AI添削の依頼文をコピー</button></div>
     </div>
